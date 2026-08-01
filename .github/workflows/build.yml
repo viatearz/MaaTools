@@ -1,0 +1,73 @@
+name: build
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout MaaTools
+        uses: actions/checkout@v6
+
+      - name: Build MaaTools
+        run: |
+          xcodebuild \
+            -scheme MaaTools \
+            -configuration Release \
+            -destination "platform=macOS,variant=Mac Catalyst"\
+            CONFIGURATION_BUILD_DIR=build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Checkout inject
+        uses: actions/checkout@v6
+        with:
+          repository: paradiseduo/inject
+          path: inject
+
+      - name: Build inject
+        run: |
+          cd inject
+          chmod +x build-macOS_arm.sh
+          ./build-macOS_arm.sh
+
+      - name: Install
+        run: |
+          mkdir -p install/MaaTools
+          cp maatools.sh install/MaaTools/
+          mv build/MaaTools.framework install/MaaTools/
+          codesign -fs- install/MaaTools/MaaTools.framework/Versions/A/MaaTools
+          mv inject/inject_arm64 install/MaaTools/inject
+
+      - name: Set Zip Name
+        run: |
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          ZIP_NAME="MaaTools-${TIMESTAMP}.zip"
+          git tag --points-at HEAD > tags.txt
+          TAG=$(head -n 1 tags.txt)
+          if [ -n "$TAG" ]; then
+            ZIP_NAME="MaaTools-${TAG}.zip"
+          fi
+
+          cd install
+          zip -r "../$ZIP_NAME" MaaTools
+          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: false
