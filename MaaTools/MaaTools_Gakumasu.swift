@@ -19,6 +19,8 @@ private let MAA_TOOLS_VERSION = 3
     private let queue = DispatchQueue(label: "MaaTools", qos: .default)
     private var listener: NWListener?
 
+    private var window: UIWindow?
+    private var checkWindowSizeTimer: Timer?
     private var windowTitle: String?
     private var tid: Int?
 
@@ -30,6 +32,8 @@ private let MAA_TOOLS_VERSION = 3
     private let connectionMagic = Data([0x4d, 0x41, 0x41, 0x00])
     // ['S', 'C', 'R', 'N']
     private let screencapMagic = Data([0x53, 0x43, 0x52, 0x4e])
+    // ['S', 'C', 'R', '2']
+    private let screencap2Magic = Data([0x53, 0x43, 0x52, 0x32])
     // ['S', 'I', 'Z', 'E']
     private let sizeMagic = Data([0x53, 0x49, 0x5a, 0x45])
     // ['T', 'E', 'R', 'M']
@@ -60,17 +64,54 @@ private let MAA_TOOLS_VERSION = 3
     }
 
     private func setupWindow() {
-        let window = UIApplication.shared.connectedScenes
+        window = UIApplication.shared.connectedScenes
             .flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
             .first { $0.isKeyWindow }
+        scale = 1.0
+        width = 1280
+        height = 720
+        windowTitle = AKInterface.shared?.windowTitle
 
-        if let screen = window?.windowScene?.screen {
-            scale = screen.nativeScale
-            width = Int(screen.nativeBounds.width.rounded())
-            height = Int(screen.nativeBounds.height.rounded())
+        checkWindowSizeTimer = Timer.scheduledTimer(
+            timeInterval: 0.1,
+            target: self,
+            selector: #selector(checkWindowSize),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    @objc private func checkWindowSize() {
+        guard let rootVC = window?.rootViewController else {
+            return
+        }
+        
+        let currentWidth = Int(rootVC.view.frame.width)
+        let currentHeight = Int(rootVC.view.frame.height)
+
+        var targetWidth = width
+        var targetHeight = height
+        if !rootVC.isLandscape {
+            swap(&targetWidth, &targetHeight)
         }
 
-        windowTitle = AKInterface.shared?.windowTitle
+        if !approximatelyEqual(currentWidth, targetWidth, tolerance: 0.01) ||
+           !approximatelyEqual(currentHeight, targetHeight, tolerance: 0.01) {
+            setWindowSize(width: targetWidth, height: targetHeight)
+        }
+    }
+
+    private func setWindowSize(width: Int, height: Int) {
+        guard let windowScene = self.window?.windowScene else { return }
+        let size = CGSize(width: width, height: height)
+        windowScene.sizeRestrictions?.minimumSize = size
+        windowScene.sizeRestrictions?.maximumSize = size
+    }
+
+    private func approximatelyEqual(_ a: Int, _ b: Int, tolerance: Double) -> Bool {
+        let average = Double(abs(a) + abs(b)) / 2
+        guard average != 0 else { return a == b }
+        return Double(abs(a - b)) / average <= tolerance
     }
 
     private func startServer() {
@@ -126,6 +167,8 @@ private let MAA_TOOLS_VERSION = 3
                 switch payload.prefix(4) {
                 case screencapMagic:
                     try await screencap(to: connection)
+                case screencap2Magic:
+                    try await screencap2(to: connection)
                 case sizeMagic:
                     try await screensize(to: connection)
                 case terminateMagic:
@@ -179,16 +222,38 @@ private let MAA_TOOLS_VERSION = 3
     // swiftlint:enable line_length
 
     private func screencap(to connection: NWConnection) async throws {
-        let data = screenshot() ?? Data()
+        let (rawdata, _, _) = screenshot()
+        let data = rawdata ?? Data()
         try await connection.send(content: data.count.u32Bytes + data)
     }
 
-    private func screenshot() -> Data? {
+    private func screencap2(to connection: NWConnection) async throws {
+        let (data, width, height) = screenshot()
+        try await connection.send(content: width.u32Bytes + height.u32Bytes + (data ?? Data()))
+    }
+
+    private func screenshot() -> (Data?, Int, Int) {
         guard let image = AKInterface.shared?.windowImage else {
             logger.error("Failed to fetch CGImage")
-            return nil
+            return (nil, 0, 0)
         }
 
+        var targetWidth = width
+        var targetHeight = height
+
+        // Swap dimensions when the image orientation does not match the default orientation
+        if (image.width - image.height) * (targetWidth - targetHeight) < 0 {
+            swap(&targetWidth, &targetHeight)
+        }
+
+        guard let data = cropAndScale(image: image, width: targetWidth, height: targetHeight) else {
+            return (nil, 0, 0)
+        }
+
+        return (data, targetWidth, targetHeight)
+    }
+
+    private func cropAndScale(image: CGImage, width: Int, height: Int) -> Data? {
         // Crop the title bar
         let titleBarHeight = image.height - image.width * height / width
         let contentRect = CGRect(x: 0, y: titleBarHeight, width: image.width,
@@ -214,6 +279,13 @@ private let MAA_TOOLS_VERSION = 3
     }
 
     private func screensize(to connection: NWConnection) async throws {
+        var width = width
+        var height = height
+
+        if let rootVC = window?.rootViewController, !rootVC.isLandscape {
+            swap(&width, &height)
+        }
+
         try await connection.send(content: width.u16Bytes + height.u16Bytes)
     }
 
@@ -394,6 +466,13 @@ private extension NWConnection {
                 }
             })
         }
+    }
+}
+
+private extension UIViewController {
+    var isLandscape: Bool {
+        let orientations = self.supportedInterfaceOrientations
+        return orientations.contains(.landscapeLeft) || orientations.contains(.landscapeRight)
     }
 }
 
