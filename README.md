@@ -27,6 +27,10 @@ sh maatools.sh uninstall <Bundle ID>
 sh maatools.sh list
 ```
 
+### Configuration
+
+Right-click the game in PlayCover and select **Show in Finder**. You'll find a configuration file ending with `.maa.json`.
+
 ## Q&A
 
 ### 1. Will this conflict with a PlayCover version with embedded MaaTools?
