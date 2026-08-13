@@ -6,9 +6,46 @@
 import Foundation
 import UIKit
 import ScreenCaptureKit
+import OSLog
 
 class MacOSHelper {
     public static let shared: MacOSHelper? = MacOSHelper()
+
+    private static let logger = Logger(subsystem: "PlayTools", category: "MaaTools")
+    private static var didLogSCKFallback = false
+
+    // Cached ScreenCaptureKit filter. Building it requires enumerating all
+    // shareable content, which is relatively expensive; MAA requests a frame
+    // roughly once a second, so reuse the filter while the window is unchanged
+    // and refresh it periodically.
+    @available(macOS 14.0, macCatalyst 18.2, *)
+    private final class SCKCache {
+        var filter: SCContentFilter?
+        var frame = CGRect.zero
+        var windowID: CGWindowID = 0
+        var refreshedAt = Date.distantPast
+
+        func resolve(for windowNumber: Int) async throws -> (SCContentFilter, CGRect) {
+            let now = Date()
+            let windowID = CGWindowID(windowNumber)
+            if let filter, self.windowID == windowID, now.timeIntervalSince(refreshedAt) < 3 {
+                return (filter, frame)
+            }
+            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+            guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                throw SCKError.windowNotFound
+            }
+            let newFilter = SCContentFilter(desktopIndependentWindow: window)
+            filter = newFilter
+            frame = window.frame
+            self.windowID = windowID
+            refreshedAt = now
+            return (newFilter, frame)
+        }
+    }
+
+    // Stored as AnyObject to avoid availability annotations on stored properties.
+    private var sckCache: AnyObject?
 
     var windowTitle: String? {
         get {
@@ -35,31 +72,45 @@ class MacOSHelper {
     // beta it returns a flat dark frame for Metal content, so when the result
     // looks blank we fall back to ScreenCaptureKit, which captures the real
     // composited window content.
+    @MainActor
     func captureImage() async -> CGImage? {
+        // 1) Legacy path first: works on older macOS without Screen Recording.
         let legacy = windowImage
         if let legacy = legacy, !looksBlank(legacy) {
             return legacy
         }
-        if #available(macOS 14.0, macCatalyst 18.2, *) {
+
+        // 2) Legacy frame looks blank (e.g. macOS 27 beta returns a flat dark
+        // frame for Metal windows): retry with ScreenCaptureKit.
+        if #available(macOS 14.0, macCatalyst 18.2, *),
+           let windowNumber = NSApplication.shared.windows.first?.windowNumber {
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-                guard let windowNumber = NSApplication.shared.windows.first?.windowNumber,
-                      let window = content.windows.first(where: { $0.windowID == CGWindowID(windowNumber) }) else {
-                    return legacy
-                }
-                let filter = SCContentFilter(desktopIndependentWindow: window)
+                let cache = (sckCache as? SCKCache) ?? SCKCache()
+                let (filter, frame) = try await cache.resolve(for: windowNumber)
+                sckCache = cache
                 let config = SCStreamConfiguration()
-                config.width = Int(window.frame.width * 2)
-                config.height = Int(window.frame.height * 2)
+                let scale = UIScreen.main.scale > 0 ? UIScreen.main.scale : 2
+                config.width = Int(frame.width * scale)
+                config.height = Int(frame.height * scale)
                 config.showsCursor = false
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-                print("[MaaTools] used ScreenCaptureKit fallback")
+                logSCKFallbackOnce()
                 return image
             } catch {
-                print("[MaaTools] ScreenCaptureKit failed, returning legacy capture: \(error)")
+                Self.logger.error("ScreenCaptureKit failed, returning legacy capture: \(error, privacy: .public)")
             }
         }
         return legacy
+    }
+
+    private enum SCKError: Error {
+        case windowNotFound
+    }
+
+    private func logSCKFallbackOnce() {
+        guard !Self.didLogSCKFallback else { return }
+        Self.didLogSCKFallback = true
+        Self.logger.info("ScreenCaptureKit fallback active (legacy capture returns blank frames)")
     }
 
     // A blank/legacy-broken frame is nearly uniform with no bright pixels,
