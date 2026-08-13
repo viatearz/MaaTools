@@ -185,12 +185,12 @@ private let MAA_TOOLS_VERSION = 3
     // swiftlint:enable line_length
 
     private func screencap(to connection: NWConnection) async throws {
-        let data = screenshot() ?? Data()
+        let data = await screenshot() ?? Data()
         try await connection.send(content: data.count.u32Bytes + data)
     }
 
-    private func screenshot() -> Data? {
-        guard let image = AKInterface.shared?.windowImage else {
+    private func screenshot() async -> Data? {
+        guard let image = await AKInterface.shared?.captureImage() else {
             logger.error("Failed to fetch CGImage")
             return nil
         }
@@ -327,8 +327,8 @@ private let MAA_TOOLS_VERSION = 3
         try await connection.send(content: data)
     }
 
-    private func bgrScreenshot() -> (Int, Int, Data)? {
-        guard let image = AKInterface.shared?.windowImage else {
+    private func bgrScreenshot() async -> (Int, Int, Data)? {
+        guard let image = await AKInterface.shared?.captureImage() else {
             logger.error("Failed to fetch CGImage")
             return nil
         }
@@ -376,7 +376,7 @@ private let MAA_TOOLS_VERSION = 3
     }
 
     private func bgrScreencap(to connection: NWConnection) async throws {
-        let (width, height, data) = bgrScreenshot() ?? (0, 0, Data())
+        let (width, height, data) = await bgrScreenshot() ?? (0, 0, Data())
         let payload = width.u32Bytes + height.u32Bytes + data.count.u32Bytes + data
         try await connection.send(content: payload)
     }
