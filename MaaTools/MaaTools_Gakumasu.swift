@@ -222,38 +222,29 @@ private let MAA_TOOLS_VERSION = 3
     // swiftlint:enable line_length
 
     private func screencap(to connection: NWConnection) async throws {
-        let (rawdata, _, _) = screenshot()
-        let data = rawdata ?? Data()
+        let ((width, height), data) = screenshot() ?? ((0, 0), Data())
         try await connection.send(content: data.count.u32Bytes + data)
     }
 
     private func screencap2(to connection: NWConnection) async throws {
-        let (data, width, height) = screenshot()
-        try await connection.send(content: width.u32Bytes + height.u32Bytes + (data ?? Data()))
+        let ((width, height), data) = screenshot() ?? ((0, 0), Data())
+        try await connection.send(content:  width.u32Bytes + height.u32Bytes + data)
     }
 
-    private func screenshot() -> (Data?, Int, Int) {
+    private func screenshot() -> ((Int, Int), Data)? {
         guard let image = AKInterface.shared?.windowImage else {
             logger.error("Failed to fetch CGImage")
-            return (nil, 0, 0)
+            return nil
         }
 
-        var targetWidth = width
-        var targetHeight = height
+        var width = width
+        var height = height
 
         // Swap dimensions when the image orientation does not match the default orientation
-        if (image.width - image.height) * (targetWidth - targetHeight) < 0 {
-            swap(&targetWidth, &targetHeight)
+        if (image.width - image.height) * (width - height) < 0 {
+            swap(&width, &height)
         }
 
-        guard let data = cropAndScale(image: image, width: targetWidth, height: targetHeight) else {
-            return (nil, 0, 0)
-        }
-
-        return (data, targetWidth, targetHeight)
-    }
-
-    private func cropAndScale(image: CGImage, width: Int, height: Int) -> Data? {
         // Crop the title bar
         let titleBarHeight = image.height - image.width * height / width
         let contentRect = CGRect(x: 0, y: titleBarHeight, width: image.width,
@@ -275,7 +266,7 @@ private let MAA_TOOLS_VERSION = 3
 
         let data = Data(bytesNoCopy: buffer, count: length, deallocator: .free)
 
-        return data
+        return ((width, height), data)
     }
 
     private func screensize(to connection: NWConnection) async throws {
