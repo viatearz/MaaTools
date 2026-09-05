@@ -1,5 +1,5 @@
 //
-//  MacOSHelper.swift
+//  AKPlugin.swift
 //  MaaTools
 //
 
@@ -8,9 +8,11 @@ import UIKit
 import OSLog
 import ScreenCaptureKit
 
-class MacOSHelper {
-    public static let shared: MacOSHelper? = MacOSHelper()
+class AKInterface {
+    public static var shared: AKPlugin? = AKPlugin()
+}
 
+class AKPlugin {
     var windowTitle: String? {
         get {
             NSApplication.shared.windows.first?.title
@@ -70,7 +72,7 @@ class MacOSHelper {
     }
 
     @available(macCatalyst 18.2, *)
-    private func captureImage(_ windowID: CGWindowID, size: CGSize) async throws -> CGImage? {
+    @MainActor private func captureImage(_ windowID: CGWindowID, size: CGSize) async throws -> CGImage? {
         let content = try await SCShareableContent.currentProcess
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
             logger.error("Cannot find the shareable content of the window")
@@ -127,5 +129,3 @@ class MacOSHelper {
         NSApplication.shared.terminate(self)
     }
 }
-
-typealias AKInterface = MacOSHelper
