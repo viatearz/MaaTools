@@ -34,17 +34,43 @@ class MacOSHelper {
         return CGWindowID(windowNumber)
     }
 
+    private func windowBounds(windowID: CGWindowID) -> CGRect? {
+        let infoList = CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID)
+        for info in infoList as? [[CFString: Any]] ?? [] {
+            guard let number = info[kCGWindowNumber] as? NSNumber,
+                  number.int32Value == windowID else {
+                continue
+            }
+            if let dictionary = info[kCGWindowBounds] as? NSDictionary {
+                return CGRect(dictionaryRepresentation: dictionary)
+            }
+        }
+        return nil
+    }
+
     @available(macCatalyst, deprecated: 18.2, renamed: "windowImage()")
     @MainActor private var windowImage: CGImage? {
         guard let windowID else {
             return nil
         }
-        return CoreGraphics.CGWindowListCreateImage(.null, .optionIncludingWindow, windowID,
-                                                    [.bestResolution, .boundsIgnoreFraming, .shouldBeOpaque])
+        guard var windowBounds = windowBounds(windowID: windowID) else {
+            logger.error("Cannot find the information of the window")
+            return nil
+        }
+        let size = windowContentRect.size
+        guard size.height <= windowBounds.height else {
+            logger.error("Invalid height: inner \(size.height), outer \(windowBounds.height)")
+            return nil
+        }
+        let titlebarHeight = windowBounds.height - size.height
+        windowBounds.origin.y += titlebarHeight
+        windowBounds.size = size
+        return CGWindowListCreateImage(windowBounds, .optionIncludingWindow, windowID,
+                                       [.bestResolution, .boundsIgnoreFraming, .shouldBeOpaque])
     }
 
     @available(macCatalyst 18.2, *)
-    @MainActor private func captureImage(_ windowID: CGWindowID) async throws -> CGImage? {
+    private func captureImage(_ windowID: CGWindowID, size: CGSize) async throws -> CGImage? {
         let content = try await SCShareableContent.currentProcess
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
             logger.error("Cannot find the shareable content of the window")
@@ -52,10 +78,16 @@ class MacOSHelper {
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let info = SCShareableContent.info(for: filter)
+        guard size.height <= info.contentRect.height else {
+            logger.error("Invalid height: inner \(size.height), outer \(info.contentRect.height)")
+            return nil
+        }
         let config = SCStreamConfiguration()
         let scale = CGFloat(info.pointPixelScale)
-        config.width = max(1, Int(ceil(info.contentRect.width * scale)))
-        config.height = max(1, Int(ceil(info.contentRect.height * scale)))
+        config.width = max(1, Int(ceil(size.width * scale)))
+        config.height = max(1, Int(ceil(size.height * scale)))
+        config.sourceRect.origin.y += info.contentRect.height - size.height
+        config.sourceRect.size = size
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB
         config.showsCursor = false
@@ -70,7 +102,7 @@ class MacOSHelper {
         if #available(macCatalyst 18.2, *) {
             do {
                 guard let windowID else { return nil }
-                return try await captureImage(windowID)
+                return try await captureImage(windowID, size: windowContentRect.size)
             } catch {
                 logger.error("ScreenCaptureKit current-process capture failed: \(error)")
                 return nil

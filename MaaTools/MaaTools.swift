@@ -198,15 +198,6 @@ private let MAA_TOOLS_VERSION = 3
             return nil
         }
 
-        // Crop the title bar
-        let titleBarHeight = image.height - image.width * height / width
-        let contentRect = CGRect(x: 0, y: titleBarHeight, width: image.width,
-                                 height: image.height - titleBarHeight)
-        guard let image = image.cropping(to: contentRect) else {
-            logger.error("Failed to crop image")
-            return nil
-        }
-
         let length = 4 * height * width
         let bytesPerRow = 4 * width
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: length)
@@ -336,25 +327,21 @@ private let MAA_TOOLS_VERSION = 3
             return nil
         }
 
-        let buffer: vImage_Buffer
+        var src: vImage_Buffer
         do {
-            buffer = try makeBuffer(image)
-            logger.debug("Got buffer: \(buffer.width)x\(buffer.height)")
+            src = try makeBuffer(image)
+            logger.debug("Got buffer: \(src.width)x\(src.height)")
         } catch {
             logger.error("Failed to create buffer: \(error.localizedDescription)")
             return nil
         }
-        defer { buffer.free() }
-
-        guard var src = croppedBuffer(buffer) else {
-            return nil
-        }
+        defer { src.free() }
 
         let bgrLength = Int(3 * src.height * src.width)
         let bgrBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bgrLength)
         var dst = vImage_Buffer(data: bgrBuffer,
                                 height: src.height, width: src.width,
-                                rowBytes: 3 * Int(buffer.width))
+                                rowBytes: 3 * Int(src.width))
 
         let result = vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
         guard result == kvImageNoError else {
@@ -474,22 +461,6 @@ extension MaaTools {
         } else {
             return try vImage_Buffer(cgImage: image, format: Self.bgrXFormat)
         }
-    }
-
-    private func croppedBuffer(_ buffer: vImage_Buffer) -> vImage_Buffer? {
-        let expectedHeight = buffer.width * UInt(height) / UInt(width)
-        guard expectedHeight <= buffer.height else {
-            logger.error("Expected height exceeds source height")
-            return nil
-        }
-
-        let titleBarHeight = buffer.height - expectedHeight
-        logger.debug("Cropping \(titleBarHeight) rows, expecting \(buffer.width)x\(expectedHeight)")
-
-        let offset = Int(titleBarHeight) * buffer.rowBytes
-        return vImage_Buffer(data: buffer.data + offset,
-                             height: expectedHeight, width: buffer.width,
-                             rowBytes: buffer.rowBytes)
     }
 }
 
