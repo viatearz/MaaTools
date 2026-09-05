@@ -47,3 +47,11 @@ class Toucher {
             .first { $0.isKeyWindow }
     }
 }
+
+class PlayInput {
+    static let shared = PlayInput()
+
+    static var touchQueue = DispatchQueue.init(label: "maatools.toucher",
+                                               qos: .userInteractive,
+                                               autoreleaseFrequency: .workItem)
+}
