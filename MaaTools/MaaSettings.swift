@@ -13,8 +13,8 @@ class MaaSettings {
     var settingsData: MaaSettingsData
 
     init() {
-        settingsUrl = URL(fileURLWithPath: "/Users/\(NSUserName())/Library/Containers/io.playcover.PlayCover")
-            .appendingPathComponent("Applications")
+        settingsUrl = Bundle.main.bundleURL
+            .deletingLastPathComponent()
             .appendingPathComponent("\(bundleIdentifier).maa.json")
         do {
             let data = try Data(contentsOf: settingsUrl)
