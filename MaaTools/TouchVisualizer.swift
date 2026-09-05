@@ -16,15 +16,15 @@ final class TouchVisualizer {
         phase: UITouch.Phase,
         position: CGPoint
     ) {
-        if window == nil {
-            if let windowScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive }) {
-                window = TouchOverlayWindow(windowScene: windowScene)
-            }
-        }
-
         DispatchQueue.main.async {
+            if self.window == nil {
+                if let windowScene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .first(where: { $0.activationState == .foregroundActive }) {
+                    self.window = TouchOverlayWindow(windowScene: windowScene)
+                }
+            }
+
             self.window?.overlayView.updateTouch(
                 fingerID: fingerID,
                 phase: phase,
