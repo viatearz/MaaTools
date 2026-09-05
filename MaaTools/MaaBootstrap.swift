@@ -7,7 +7,7 @@ import UIKit
 import OSLog
 
 public class MaaBootstrap: NSObject {
-    private static let logger = Logger(subsystem: "MaaTools", category: "MaaBootstrap")
+    private static let logger = Logger(subsystem: "PlayTools", category: "MaaTools")
 
     @objc public static func launch() {
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(1)) {
@@ -21,6 +21,10 @@ public class MaaBootstrap: NSObject {
                playSettings.value(forKey: "maaTools") as? Bool == true {
                 Self.logger.warning("You are already using PlayCover with embedded MaaTools, skip running the standalone MaaTools.")
                 return
+            }
+
+            if ArknightsMetalCapture.installation == true {
+                print("[MaaTools] Installed Metal capture hooks.")
             }
 
             if Bundle.main.bundleIdentifier == "jp.co.bandainamcoent.BNEI0421" {

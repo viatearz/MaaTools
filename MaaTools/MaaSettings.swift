@@ -30,12 +30,25 @@ class MaaSettings {
     lazy var maaToolsPort = settingsData.port
 
     lazy var debug = settingsData.debug != 0
+
+    lazy var enableMetalCapture = settingsData.enableMetalCapture != 0
 }
 
-class MaaSettingsData : Codable {
+struct MaaSettingsData : Codable {
     var enabled = 0
     var port = 1717
     var debug = 0
+    var enableMetalCapture = 0
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decode(Int.self, forKey: .enabled)
+        port = try container.decode(Int.self, forKey: .port)
+        debug = try container.decodeIfPresent(Int.self, forKey: .debug) ?? 0
+        enableMetalCapture = try container.decodeIfPresent(Int.self, forKey: .enableMetalCapture) ?? 0
+    }
 }
 
 typealias PlaySettings = MaaSettings

@@ -44,7 +44,7 @@ create_maatools_config() {
     echo "Creating MaaTools config..."
 
     if [ ! -f "$MAATOOLS_CONFIG" ]; then
-        printf "{\n\t\"enabled\": 1,\n\t\"port\": 1717,\n\t\"debug\": 0\n}" > "$MAATOOLS_CONFIG"
+        printf "{\n\t\"enabled\": 1,\n\t\"port\": 1717,\n\t\"debug\": 0,\n\t\"enableMetalCapture\": 0\n}" > "$MAATOOLS_CONFIG"
     fi
 }
 
